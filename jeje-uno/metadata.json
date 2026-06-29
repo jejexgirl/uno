@@ -1,0 +1,6 @@
+{
+  "name": "Jeje Uno",
+  "description": "لعبة أونو جماعية ومباشرة بلمسة واقعية وتصميم جذاب يحاكي الطاولة الحقيقية.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
