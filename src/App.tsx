@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, memo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Users,
@@ -110,16 +110,11 @@ export default function App() {
 
   const socketRef = useRef<WebSocket | null>(null);
   const logsEndRef = useRef<HTMLDivElement | null>(null);
-  const chatEndRef = useRef<HTMLDivElement | null>(null);
   const prevMsgCount = useRef(0);
 
   useEffect(() => {
     if (logsEndRef.current) logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
   }, [gameState?.logs]);
-
-  useEffect(() => {
-    if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
-  }, [gameState?.messages]);
 
   // Track unread chat messages
   useEffect(() => {
@@ -242,102 +237,12 @@ export default function App() {
     return positions[index % positions.length];
   };
 
-  // Floating Chat Component (rendered separately, on top of everything)
-  const FloatingChat = () => {
-    if (!gameState) return null;
-    const messages = gameState.messages || [];
-
-    return (
-      <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-2">
-        {/* Chat window */}
-        <AnimatePresence>
-          {chatOpen && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.85, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.85, y: 20 }}
-              transition={{ duration: 0.18 }}
-              className="w-72 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col"
-              style={{ height: '340px' }}
-            >
-              {/* Chat header */}
-              <div className="flex items-center justify-between px-4 py-2.5 bg-slate-800 border-b border-slate-700">
-                <div className="flex items-center gap-2">
-                  <MessageCircle className="w-4 h-4 text-amber-400" />
-                  <span className="text-xs font-bold text-slate-200">شات الغرفة 💬</span>
-                  <span className="text-[10px] text-slate-500">({gameState.code})</span>
-                </div>
-                <button onClick={() => setChatOpen(false)} className="text-slate-500 hover:text-slate-200 transition-colors cursor-pointer">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* Messages */}
-              <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
-                {messages.length === 0 ? (
-                  <div className="flex items-center justify-center h-full">
-                    <p className="text-slate-600 text-xs text-center">لا توجد رسائل بعد.<br />ابدأ المحادثة! 👋</p>
-                  </div>
-                ) : (
-                  messages.map((msg) => {
-                    const isMe = msg.senderId === yourId;
-                    return (
-                      <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                        {!isMe && (
-                          <span className="text-[10px] text-slate-500 font-semibold mb-0.5 px-1">{msg.senderName}</span>
-                        )}
-                        <div className={`max-w-[85%] px-3 py-1.5 rounded-xl text-xs leading-relaxed break-words ${
-                          isMe
-                            ? 'bg-amber-500 text-slate-950 font-semibold rounded-tr-none'
-                            : 'bg-slate-800 text-slate-200 border border-slate-700 rounded-tl-none'
-                        }`}>
-                          {msg.text}
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-                <div ref={chatEndRef} />
-              </div>
-
-              {/* Input */}
-              <div className="px-3 py-2.5 border-t border-slate-800 flex items-center gap-2 bg-slate-900">
-                <input
-                  type="text"
-                  value={chatInput}
-                  onChange={e => setChatInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') handleSendChat(); }}
-                  placeholder="اكتب رسالتك... (أي لغة)"
-                  className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 transition-colors"
-                  dir="auto"
-                />
-                <button
-                  onClick={handleSendChat}
-                  disabled={!chatInput.trim()}
-                  className="p-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 rounded-xl transition-colors cursor-pointer"
-                >
-                  <Send className="w-3.5 h-3.5 text-slate-950" />
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Toggle button */}
-        <button
-          onClick={() => setChatOpen(!chatOpen)}
-          className="relative w-12 h-12 bg-amber-500 hover:bg-amber-400 rounded-2xl shadow-xl flex items-center justify-center transition-all active:scale-90 cursor-pointer border-2 border-amber-400"
-        >
-          <MessageCircle className="w-5 h-5 text-slate-950" />
-          {unreadCount > 0 && (
-            <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 rounded-full text-[10px] font-black text-white flex items-center justify-center border border-red-700">
-              {unreadCount > 9 ? '9+' : unreadCount}
-            </span>
-          )}
-        </button>
-      </div>
-    );
-  };
+  const handleSendChatCb = useCallback(() => {
+    const text = chatInput.trim();
+    if (!text) return;
+    sendAction({ type: 'send_chat', text });
+    setChatInput('');
+  }, [chatInput]);
 
   return (
     <div className="h-screen w-screen bg-slate-900 text-white font-sans overflow-hidden flex flex-col relative" dir="rtl">
@@ -653,9 +558,9 @@ export default function App() {
                 </div>
 
                 {/* Bottom: Player controls + cards */}
-                <div className="flex-shrink-0 bg-slate-800/30 border-t border-slate-700/50 px-4 py-2" style={{maxHeight:'42%'}}>
-                  {/* Status bar */}
-                  <div className="flex items-center justify-between mb-2">
+                <div className="flex-shrink-0 bg-slate-800/30 border-t border-slate-700/50 px-4 py-3" style={{maxHeight:'44%'}}>
+                  {/* Action buttons row - prominent and at top */}
+                  <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <div className="w-7 h-7 bg-amber-500 text-slate-950 rounded-lg flex items-center justify-center font-black text-xs">أ</div>
                       <div>
@@ -669,13 +574,13 @@ export default function App() {
                         </span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2.5">
                       <button onClick={handlePassTurn} disabled={gameState.players[gameState.currentTurn].id !== yourId}
-                        className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 hover:bg-slate-800 text-white font-bold text-xs active:scale-95 transition-all disabled:opacity-40 cursor-pointer">
+                        className="px-4 py-2 rounded-xl bg-slate-700 border-2 border-slate-500 hover:bg-slate-600 hover:border-slate-400 text-white font-bold text-sm active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer shadow-lg">
                         تمرير ➡️
                       </button>
                       <button onClick={handleSayUno} disabled={yourCards.length > 2}
-                        className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs active:scale-95 transition-all disabled:opacity-40 cursor-pointer">
+                        className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 border-2 border-amber-300 text-slate-950 font-black text-sm active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer shadow-lg shadow-amber-500/30">
                         أونـو! 📣
                       </button>
                     </div>
@@ -683,21 +588,19 @@ export default function App() {
 
                   {/* Hand */}
                   <div>
-                    <h4 className="font-bold text-[10px] text-slate-400 mb-1">أوراقك: <strong className="text-amber-400">({yourCards.length})</strong></h4>
+                    <h4 className="font-bold text-[10px] text-slate-400 mb-1.5">أوراقك: <strong className="text-amber-400">({yourCards.length})</strong></h4>
                     {yourCards.length === 0 ? (
                       <div className="p-4 text-center text-slate-500 text-xs border-2 border-dashed border-slate-800 rounded-xl">لا توجد كروت.</div>
                     ) : (
-                      <div className="flex items-end overflow-x-auto pb-1" style={{minHeight: 100}}>
-                        <div className="flex flex-row-reverse items-end py-2 px-4 mx-auto">
-                          {yourCards.map((card, idx) => {
+                      <div className="flex items-end overflow-x-auto pb-2" style={{minHeight: 105}}>
+                        <div className="flex flex-row-reverse items-end gap-2 py-1 px-2 mx-auto">
+                          {yourCards.map((card) => {
                             const playable = isCardPlayable(card);
                             const isMyTurn = gameState.players[gameState.currentTurn].id === yourId;
-                            const angle = (idx - (yourCards.length - 1) / 2) * 3.5;
-                            const translateY = Math.abs(idx - (yourCards.length - 1) / 2) * 2.5;
                             return (
-                              <div key={card.id} className="shrink-0 transition-all duration-200 hover:z-30 hover:-translate-y-6 relative"
-                                style={{ marginLeft: idx === 0 ? 0 : -48, transform: `rotate(${angle}deg) translateY(${translateY}px)`, zIndex: idx }}>
-                                <UnoCard card={card} playable={playable && isMyTurn} disabled={!playable || !isMyTurn} onClick={() => handlePlayCard(card)} size="md" />
+                              <div key={card.id} className="shrink-0 transition-all duration-200 hover:z-30 hover:-translate-y-4 relative"
+                                style={{ zIndex: 1, opacity: 1 }}>
+                                <UnoCard card={card} playable={playable && isMyTurn} disabled={!playable || !isMyTurn} onClick={() => handlePlayCard(card)} size="sm" />
                               </div>
                             );
                           })}
@@ -789,7 +692,19 @@ export default function App() {
       </AnimatePresence>
 
       {/* Floating Chat */}
-      <FloatingChat />
+      {gameState && (
+        <FloatingChat
+          messages={gameState.messages || []}
+          roomCode={gameState.code}
+          yourId={yourId}
+          chatOpen={chatOpen}
+          setChatOpen={setChatOpen}
+          chatInput={chatInput}
+          setChatInput={setChatInput}
+          onSend={handleSendChatCb}
+          unreadCount={unreadCount}
+        />
+      )}
 
       {/* Footer */}
       <footer className="h-10 bg-slate-950/60 border-t border-slate-700/80 flex items-center px-6 text-[10px] text-slate-500 gap-6 select-none flex-shrink-0">
@@ -799,3 +714,115 @@ export default function App() {
     </div>
   );
 }
+
+// ── External FloatingChat component (outside App to prevent re-mount on every render) ──
+interface FloatingChatProps {
+  messages: { id: string; senderId: string; senderName: string; text: string }[];
+  roomCode: string;
+  yourId: string | null;
+  chatOpen: boolean;
+  setChatOpen: (v: boolean) => void;
+  chatInput: string;
+  setChatInput: (v: string) => void;
+  onSend: () => void;
+  unreadCount: number;
+}
+
+const FloatingChat = memo(({ messages, roomCode, yourId, chatOpen, setChatOpen, chatInput, setChatInput, onSend, unreadCount }: FloatingChatProps) => {
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  return (
+    <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-2">
+      <AnimatePresence>
+        {chatOpen && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.85, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.85, y: 20 }}
+            transition={{ duration: 0.18 }}
+            className="w-72 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+            style={{ height: '340px' }}
+          >
+            {/* Chat header */}
+            <div className="flex items-center justify-between px-4 py-2.5 bg-slate-800 border-b border-slate-700">
+              <div className="flex items-center gap-2">
+                <MessageCircle className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-bold text-slate-200">شات الغرفة 💬</span>
+                <span className="text-[10px] text-slate-500">({roomCode})</span>
+              </div>
+              <button onClick={() => setChatOpen(false)} className="text-slate-500 hover:text-slate-200 transition-colors cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
+              {messages.length === 0 ? (
+                <div className="flex items-center justify-center h-full">
+                  <p className="text-slate-600 text-xs text-center">لا توجد رسائل بعد.<br />ابدأ المحادثة! 👋</p>
+                </div>
+              ) : (
+                messages.map((msg) => {
+                  const isMe = msg.senderId === yourId;
+                  return (
+                    <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                      {!isMe && (
+                        <span className="text-[10px] text-slate-500 font-semibold mb-0.5 px-1">{msg.senderName}</span>
+                      )}
+                      <div className={`max-w-[85%] px-3 py-1.5 rounded-xl text-xs leading-relaxed break-words ${
+                        isMe
+                          ? 'bg-amber-500 text-slate-950 font-semibold rounded-tr-none'
+                          : 'bg-slate-800 text-slate-200 border border-slate-700 rounded-tl-none'
+                      }`}>
+                        {msg.text}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+              <div ref={chatEndRef} />
+            </div>
+
+            {/* Input */}
+            <div className="px-3 py-2.5 border-t border-slate-800 flex items-center gap-2 bg-slate-900">
+              <input
+                type="text"
+                value={chatInput}
+                onChange={e => setChatInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onSend(); } }}
+                placeholder="اكتب رسالتك... (أي لغة)"
+                className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 transition-colors"
+                dir="auto"
+                autoComplete="off"
+              />
+              <button
+                onClick={onSend}
+                disabled={!chatInput.trim()}
+                className="p-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 rounded-xl transition-colors cursor-pointer"
+              >
+                <Send className="w-3.5 h-3.5 text-slate-950" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Toggle button */}
+      <button
+        onClick={() => setChatOpen(!chatOpen)}
+        className="relative w-12 h-12 bg-amber-500 hover:bg-amber-400 rounded-2xl shadow-xl flex items-center justify-center transition-all active:scale-90 cursor-pointer border-2 border-amber-400"
+      >
+        <MessageCircle className="w-5 h-5 text-slate-950" />
+        {unreadCount > 0 && (
+          <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 rounded-full text-[10px] font-black text-white flex items-center justify-center border border-red-700">
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </span>
+        )}
+      </button>
+    </div>
+  );
+});
